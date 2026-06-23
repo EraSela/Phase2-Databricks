@@ -47,6 +47,32 @@ df.head()
 
 import pandas as pd
 # Data cleaning requirements
+df=df.dropna(
+    subset=[
+        "MOVIES",
+        "YEAR",
+        "GENRE",
+        "RATING",
+        "ONE-LINE",
+        "STARS",
+        "VOTES",
+        "RunTime",
+        "Gross"
+    ],
+    how="all"
+)
+
+df["GENRE"]=df["GENRE"].str.replace("\n"," ", regex=False)
+df["ONE-LINE"]=df["ONE-LINE"].str.replace("\n"," ", regex=False)
+df["STARS"]=df["STARS"].str.replace("\n"," ", regex=False)
+
+df["owner_company"]=df["owner_company"].str.replace("\t","", regex=False)
+
+for col in ["GENRE","ONE-LINE","STARS","owner_company"]:
+    df[col]=df[col].str.strip()
+
+
+df.head()
 
 # write your code here
 
