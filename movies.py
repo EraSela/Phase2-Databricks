@@ -92,6 +92,33 @@ df.head()
 # COMMAND ----------
 
 # write your code here
+# Extract Director
+df["Director"] = df["STARS"].str.extract(
+    r"Director:\s*(.*?)\s*Stars:",
+    expand=False
+)
+
+# Extract Stars
+df["Stars"] = df["STARS"].str.extract(
+    r"Stars:\s*(.*)",
+    expand=False
+)
+
+# Remove original column
+df = df.drop(columns=["STARS"])
+
+# Convert Extract_date to datetime
+df["Extract_date"] = pd.to_datetime(df["Extract_date"])
+
+# Create new columns
+df["extraction_date"] = df["Extract_date"].dt.date
+df["extraction_time"] = df["Extract_date"].dt.time
+
+# Remove original column
+df = df.drop(columns=["Extract_date"])
+
+df.head()                        
+#
 
 # COMMAND ----------
 
