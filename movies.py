@@ -133,7 +133,86 @@ df.head()
 
 # COMMAND ----------
 
-# Write your code here
+import pandas as pd
+import re
+
+# Read table into pandas dataframe
+df = spark.read.table("workspace.default.movies_data_1").toPandas()
+
+# -----------------------------
+# Data cleaning
+# -----------------------------
+
+df = df.dropna(
+    subset=[
+        "MOVIES", "YEAR", "GENRE", "RATING", "ONE-LINE",
+        "STARS", "VOTES", "RunTime", "Gross"
+    ],
+    how="all"
+)
+
+df["GENRE"] = df["GENRE"].str.replace("\n", " ", regex=False)
+df["ONE-LINE"] = df["ONE-LINE"].str.replace("\n", " ", regex=False)
+df["STARS"] = df["STARS"].str.replace("\n", " ", regex=False)
+df["owner_company"] = df["owner_company"].str.replace("\t", "", regex=False)
+
+for col in ["GENRE", "ONE-LINE", "STARS", "owner_company"]:
+    df[col] = df[col].str.strip()
+
+# -----------------------------
+# Column splitting
+# -----------------------------
+
+df["Director"] = df["STARS"].str.extract(r"Director:\s*(.*?)\s*Stars:", expand=False)
+df["Stars"] = df["STARS"].str.extract(r"Stars:\s*(.*)", expand=False)
+
+df = df.drop(columns=["STARS"])
+
+df["Extract_date"] = pd.to_datetime(df["Extract_date"])
+
+df["extraction_date"] = df["Extract_date"].dt.date
+df["extraction_time"] = df["Extract_date"].dt.time
+
+df = df.drop(columns=["Extract_date"])
+
+# -----------------------------
+# Year logic
+# -----------------------------
+
+def extract_year_logic(year_value):
+    if pd.isna(year_value):
+        return pd.Series([None, None, None])
+
+    year_text = str(year_value).replace("(", "").replace(")", "").strip()
+    years = re.findall(r"\d{4}", year_text)
+
+    if len(years) == 1:
+        start_year = years[0]
+
+        if "–" in year_text or "-" in year_text:
+            end_year = "present"
+            lasted = "present"
+        else:
+            end_year = years[0]
+            lasted = 0
+
+    elif len(years) >= 2:
+        start_year = years[0]
+        end_year = years[1]
+        lasted = int(end_year) - int(start_year)
+
+    else:
+        start_year = None
+        end_year = None
+        lasted = None
+
+    return pd.Series([start_year, end_year, lasted])
+
+df[["start_year", "end_year", "lasted"]] = df["YEAR"].apply(extract_year_logic)
+
+df = df.drop(columns=["YEAR"])
+
+df.head()
 
 # COMMAND ----------
 
