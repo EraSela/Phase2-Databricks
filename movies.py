@@ -46,35 +46,20 @@ df.head()
 # COMMAND ----------
 
 import pandas as pd
-# Data cleaning requirements
-df=df.dropna(
-    subset=[
-        "MOVIES",
-        "YEAR",
-        "GENRE",
-        "RATING",
-        "ONE-LINE",
-        "STARS",
-        "VOTES",
-        "RunTime",
-        "Gross"
-    ],
-    how="all"
-)
 
-df["GENRE"]=df["GENRE"].str.replace("\n"," ", regex=False)
-df["ONE-LINE"]=df["ONE-LINE"].str.replace("\n"," ", regex=False)
-df["STARS"]=df["STARS"].str.replace("\n"," ", regex=False)
+empty_row_columns = [
+    "MOVIES", "YEAR", "GENRE", "RATING", "ONE-LINE",
+    "STARS", "VOTES", "RunTime", "Gross"
+]
 
-df["owner_company"]=df["owner_company"].str.replace("\t","", regex=False)
+df = df.dropna(subset=empty_row_columns, how="all").reset_index(drop=True)
 
-for col in ["GENRE","ONE-LINE","STARS","owner_company"]:
-    df[col]=df[col].str.strip()
+for column in ["GENRE", "ONE-LINE", "STARS"]:
+    df[column] = df[column].str.replace("\n", " ", regex=False).str.strip()
 
+df["owner_company"] = df["owner_company"].str.replace("\t", "", regex=False).str.strip()
 
 df.head()
-
-# write your code here
 
 # COMMAND ----------
 
@@ -91,34 +76,33 @@ df.head()
 
 # COMMAND ----------
 
-# write your code here
-# Extract Director
-df["Director"] = df["STARS"].str.extract(
-    r"Director:\s*(.*?)\s*Stars:",
+# Requirement: Column splitting
+
+stars_source = df["STARS"].fillna("").astype(str)
+
+df["Director"] = stars_source.str.extract(
+    r"Directors?:\s*(.*?)(?:\s*\|\s*Stars?:|\s+Stars?:|$)",
     expand=False
 )
 
-# Extract Stars
-df["Stars"] = df["STARS"].str.extract(
-    r"Stars:\s*(.*)",
+df["Stars"] = stars_source.str.extract(
+    r"Stars?:\s*(.*)",
     expand=False
 )
 
-# Remove original column
+df["Director"] = df["Director"].str.strip()
+df["Stars"] = df["Stars"].str.strip()
+
 df = df.drop(columns=["STARS"])
 
-# Convert Extract_date to datetime
-df["Extract_date"] = pd.to_datetime(df["Extract_date"])
+df["Extract_date"] = pd.to_datetime(df["Extract_date"], errors="coerce")
 
-# Create new columns
 df["extraction_date"] = df["Extract_date"].dt.date
 df["extraction_time"] = df["Extract_date"].dt.time
 
-# Remove original column
 df = df.drop(columns=["Extract_date"])
 
-df.head()                        
-#
+df.head()
 
 # COMMAND ----------
 
@@ -133,82 +117,27 @@ df.head()
 
 # COMMAND ----------
 
-import pandas as pd
-import re
+year_text = df["YEAR"].fillna("").astype(str).str.strip()
 
-# Read table into pandas dataframe
-df = spark.read.table("workspace.default.movies_data_1").toPandas()
-
-# -----------------------------
-# Data cleaning
-# -----------------------------
-
-df = df.dropna(
-    subset=[
-        "MOVIES", "YEAR", "GENRE", "RATING", "ONE-LINE",
-        "STARS", "VOTES", "RunTime", "Gross"
-    ],
-    how="all"
+year_parts = year_text.str.extract(
+    r"(?P<start_year>\d{4})(?:\s*[–-]\s*(?P<end_year>\d{4})?)?"
 )
 
-df["GENRE"] = df["GENRE"].str.replace("\n", " ", regex=False)
-df["ONE-LINE"] = df["ONE-LINE"].str.replace("\n", " ", regex=False)
-df["STARS"] = df["STARS"].str.replace("\n", " ", regex=False)
-df["owner_company"] = df["owner_company"].str.replace("\t", "", regex=False)
+df["start_year"] = year_parts["start_year"].fillna("")
+df["end_year"] = ""
 
-for col in ["GENRE", "ONE-LINE", "STARS", "owner_company"]:
-    df[col] = df[col].str.strip()
+completed_range = year_parts["start_year"].notna() & year_parts["end_year"].notna()
+df.loc[completed_range, "end_year"] = year_parts.loc[completed_range, "end_year"]
 
-# -----------------------------
-# Column splitting
-# -----------------------------
+still_in_production = year_text.str.contains(r"[–-]\s*\)", regex=True)
+df.loc[still_in_production, "end_year"] = "present"
 
-df["Director"] = df["STARS"].str.extract(r"Director:\s*(.*?)\s*Stars:", expand=False)
-df["Stars"] = df["STARS"].str.extract(r"Stars:\s*(.*)", expand=False)
+df["lasted"] = ""
 
-df = df.drop(columns=["STARS"])
-
-df["Extract_date"] = pd.to_datetime(df["Extract_date"])
-
-df["extraction_date"] = df["Extract_date"].dt.date
-df["extraction_time"] = df["Extract_date"].dt.time
-
-df = df.drop(columns=["Extract_date"])
-
-# -----------------------------
-# Year logic
-# -----------------------------
-
-def extract_year_logic(year_value):
-    if pd.isna(year_value):
-        return pd.Series([None, None, None])
-
-    year_text = str(year_value).replace("(", "").replace(")", "").strip()
-    years = re.findall(r"\d{4}", year_text)
-
-    if len(years) == 1:
-        start_year = years[0]
-
-        if "–" in year_text or "-" in year_text:
-            end_year = "present"
-            lasted = "present"
-        else:
-            end_year = years[0]
-            lasted = 0
-
-    elif len(years) >= 2:
-        start_year = years[0]
-        end_year = years[1]
-        lasted = int(end_year) - int(start_year)
-
-    else:
-        start_year = None
-        end_year = None
-        lasted = None
-
-    return pd.Series([start_year, end_year, lasted])
-
-df[["start_year", "end_year", "lasted"]] = df["YEAR"].apply(extract_year_logic)
+df.loc[completed_range, "lasted"] = (
+    year_parts.loc[completed_range, "end_year"].astype(int)
+    - year_parts.loc[completed_range, "start_year"].astype(int)
+)
 
 df = df.drop(columns=["YEAR"])
 
@@ -262,7 +191,7 @@ def assert_df(df):
     # Checks for the first csv file
     # the end dataset should be of shape (9999,16)
     assert df.shape[0] == 9999
-    assert df.shape[1] == 17
+    assert df.shape[1] == 16
 
     # The Lasted column should have 3180 rows with 'present' value
     assert df.loc[df["end_year"]=='present'].shape[0] == 3180
@@ -287,6 +216,21 @@ def assert_df(df):
     assert len(df.Director.unique()) == 3709
     print("Assertion of dataframe is complete!")
 
+
+# COMMAND ----------
+
+debug_df = spark.createDataFrame([
+    ("shape", str(df.shape)),
+    ("present", str(df.loc[df["end_year"] == "present"].shape[0])),
+    ("empty lasted", str(df.loc[df["lasted"] == ""].shape[0])),
+    ("row 0 Director", str(df.iloc[0]["Director"])),
+    ("row 11 MOVIES", str(df.iloc[11]["MOVIES"])),
+    ("row 11 lasted", str(df.iloc[11]["lasted"])),
+    ("companies", str(len(df.owner_company.unique()))),
+    ("directors", str(len(df.Director.unique())))
+], ["check", "value"])
+
+display(debug_df)
 
 # COMMAND ----------
 
