@@ -231,6 +231,20 @@ df.head()
 # COMMAND ----------
 
 # Write your code here
+# Create DimCompany
+DimCompany = pd.DataFrame(
+    df["owner_company"].dropna().unique(),
+    columns=["owner_company"]
+)
+
+# Create DimDirector
+DimDirector = pd.DataFrame(
+    df["Director"].dropna().unique(),
+    columns=["Director"]
+)
+
+DimCompany.head()
+DimDirector.head()
 
 # COMMAND ----------
 
